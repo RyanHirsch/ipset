@@ -47,28 +47,24 @@ function getIp() {
 async function updateRecord(zoneId, existingDnsRecords, name, ip) {
   const existing = existingDnsRecords.find((r) => r.name === name);
 
+  const config = {
+    type: "A",
+    name: name,
+    content: ip,
+    ttl: 120,
+    proxied: false,
+  };
   try {
     if (!existing) {
       info("Creating new record");
-      await cf.dnsRecords.add(zoneId, {
-        type: "A",
-        name: name,
-        content: ip,
-        ttl: 120,
-        proxied: false,
-      });
+      await cf.dnsRecords.add(zoneId, config);
     } else if (existing.content !== ip) {
       info("Updating existing record");
-      await cf.dnsRecords.edit(zoneId, existing.id, {
-        type: "A",
-        name: name,
-        content: ip,
-        ttl: 120,
-        proxied: false,
-      });
+      await cf.dnsRecords.edit(zoneId, existing.id, config);
     }
     info(`Successfully updated ${name}: ${ip}`);
   } catch (err) {
+    error(JSON.stringify(config, null, 2));
     error(`Failed to update ${name}`, err);
   }
 }
