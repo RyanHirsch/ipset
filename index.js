@@ -70,10 +70,15 @@ async function updateDns(name, hostName, { internal, external }) {
 }
 
 const args = process.argv.slice(2);
-const [host, computerName] = args;
+const host = args[0] || process.env.DNS_HOST;
+const computerName = args[1] || process.env.COMPUTER_NAME;
 
 console.log({ host, computerName });
 
-if (host && computerName && args.length === 2) {
+if (host && computerName) {
   getIp().then((ips) => updateDns(host, computerName, ips));
+} else {
+  console.error(
+    "Configure environment variables or use with `node index.js <DOMAIN> <COMPUTER NAME>`"
+  );
 }
