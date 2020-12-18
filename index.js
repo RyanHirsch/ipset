@@ -2,6 +2,12 @@ require("dotenv").config();
 const { execSync } = require("child_process");
 const http = require("http");
 const cloudflare = require("cloudflare");
+const debug = require("debug");
+
+const info = debug("ipset:info");
+info.log = console.log.bind(console);
+
+const error = debug("ipset:error");
 
 const cf = cloudflare({
   token: process.env.CF_TOKEN,
@@ -23,13 +29,19 @@ function httpGet(url) {
 function getIp() {
   const localIpCommand = process.platform === "darwin" ? "ipconfig getifaddr en0" : "hostname -I";
 
-  return httpGet("http://ifconfig.me/ip").then((external) => {
-    const localIp = execSync(localIpCommand).toString().trim();
-    return {
-      external: external.trim(),
-      internal: localIp,
-    };
-  }, console.error);
+  return httpGet("http://ifconfig.me/ip").then(
+    (external) => {
+      const localIp = execSync(localIpCommand).toString().trim();
+      info(`External IP: ${external.trim()}, Internal IP: ${localIp}`);
+      return {
+        external: external.trim(),
+        internal: localIp,
+      };
+    },
+    (err) => {
+      error(`Failed to getIp`, err);
+    }
+  );
 }
 
 async function updateRecord(zoneId, existingDnsRecords, name, ip) {
@@ -37,6 +49,7 @@ async function updateRecord(zoneId, existingDnsRecords, name, ip) {
 
   try {
     if (!existing) {
+      info("Creating new record");
       await cf.dnsRecords.add(zoneId, {
         type: "A",
         name: name,
@@ -45,6 +58,7 @@ async function updateRecord(zoneId, existingDnsRecords, name, ip) {
         proxied: false,
       });
     } else if (existing.content !== ip) {
+      info("Updating existing record");
       await cf.dnsRecords.edit(zoneId, existing.id, {
         type: "A",
         name: name,
@@ -53,32 +67,39 @@ async function updateRecord(zoneId, existingDnsRecords, name, ip) {
         proxied: false,
       });
     }
+    info(`Successfully updated ${name}: ${ip}`);
   } catch (err) {
-    console.error(`Failed to update ${name}`);
-    console.error(err);
+    error(`Failed to update ${name}`, err);
   }
 }
 
 async function updateDns(name, hostName, { internal, external }) {
-  const { result: zoneResult } = await cf.zones.browse({ name });
-  const { id } = zoneResult[0];
+  try {
+    const { result: zoneResult } = await cf.zones.browse({ name });
+    const { id } = zoneResult[0];
 
-  const { result: dnsResult } = await cf.dnsRecords.browse(id);
+    try {
+      const { result: dnsResult } = await cf.dnsRecords.browse(id);
 
-  await updateRecord(id, dnsResult, `${hostName}.internal.${name}`, internal);
-  await updateRecord(id, dnsResult, `${hostName}.external.${name}`, external);
+      await updateRecord(id, dnsResult, `${hostName}.internal.${name}`, internal);
+      await updateRecord(id, dnsResult, `${hostName}.external.${name}`, external);
+
+      info("Update complete");
+    } catch (err) {
+      error("Failed to get existing records", err);
+    }
+  } catch (err) {
+    error("Failed to get existing DNS zone", err);
+  }
 }
 
 const args = process.argv.slice(2);
 const host = args[0] || process.env.DNS_HOST;
 const computerName = args[1] || process.env.COMPUTER_NAME;
 
-console.log({ host, computerName });
-
 if (host && computerName) {
+  info(`Updating ${host} with information for ${computerName}`);
   getIp().then((ips) => updateDns(host, computerName, ips));
 } else {
-  console.error(
-    "Configure environment variables or use with `node index.js <DOMAIN> <COMPUTER NAME>`"
-  );
+  error("Configure environment variables or use with `node index.js <DOMAIN> <COMPUTER NAME>`");
 }
