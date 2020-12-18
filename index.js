@@ -44,7 +44,19 @@ function getIp() {
   );
 }
 
+/**
+ *
+ * @param {string} zoneId
+ * @param {*} existingDnsRecords
+ * @param {string} name
+ * @param {string} ip
+ */
 async function updateRecord(zoneId, existingDnsRecords, name, ip) {
+  if (ip.includes(" ")) {
+    ip = ip.split(" ")[0];
+    info("IP contained a space, assuming first address is the desired IP");
+  }
+
   const existing = existingDnsRecords.find((r) => r.name === name);
 
   const config = {
